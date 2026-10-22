@@ -24,7 +24,7 @@ Set your working directory
 (run getwd() in the console -- the small window below the main script area -- to check that the working directory is analysis_data)
 (if getwd() prints the wrong directory, run setwd("PATH TO anaylysis_data"))
 ```{r setup}
-      knitr::opts_knit$set(root.dir = normalizePath("PATH TO analysis_data")) 
+knitr::opts_knit$set(root.dir = normalizePath("/home1/tchen173/analysis_data")) 
 ```
 
 Download and load packages
@@ -53,53 +53,47 @@ rna_se <- GDCprepare(rna_query)
 Let's take a look at rna_se (RNA Summarized Experiment). Call head() and str(). Also explore the data frame by double clicking on it from the Environment panel (or calling "View(rna_se)").
 
 ```{r Exercise 1.1}
-# write code here
 head(rna_se)
 str(rna_se)
+View(rna_se)
 ```
 
 Use the dim() function to find the dimensions of the colData, rowRanges@elementMetadata, and unstranded dataframes. Record them below:
 
-  ~ colData (rows, cols): [Fill In]
-  ~ rowRanges@elementMetadata: [Fill In]
-  ~ rna_se@assays@data$unstranded: [Fill In]
+  ~ colData (rows, cols): 1231 rows, 94 cols
+  ~ rowRanges@elementMetadata: 60,660 rows, 10 cols
+  ~ rna_se@assays@data$unstranded: 60,660 rows, 1231 cols
 
 ```{r Exercise 1.2}
-# write code here
-dim(rna_se@colData)
-dim(rna_se@rowRanges@elementMetadata)
-dim(rna_se@assays@data$unstranded)
+dim(colData(rna_se))
+dim(rowData(rna_se))
+dim(assays(rna_se)$unstranded)
 
 ```
 
 Fill out a description of the rows/columns of our data frames. You can use this as a cheat sheet moving forward.
   ~ colData
-        - Rows: [Fill In]
-        - Columns: [Fill In]
+        - Rows: TCGA Barcodes
+        - Columns: Clinical metadata variables
   ~ rowRanges@elementMetadata
-        - Rows: [Fill In]
-        - Columns: [Fill In]
+        - Rows: Genes
+        - Columns: Gene annotation features
   ~ unstranded (in assays)
-        - Rows: [Fill In]
-        - Columns: [Fill In]
+        - Rows: Genes
+        - Columns: TCGA barcodes
   
 ```{r Exercise 1.3}
 # colData: 
-rownames(rna_se@colData)
-colnames(rna_se@colData)
+rownames(colData(rna_se))
+colnames(colData(rna_se))
 
 # rowRanges:
-rownames(rna_se@rowRanges@elementMetadata)
-colnames(rna_se@rowRanges@elementMetadata)
-
-# what are the rows...?
+rownames(rowData(rna_se))
+colnames(rowData(rna_se))
 
 # unstranded: 
-rownames(rna_se@assays@data$unstranded)
-colnames(rna_se@assays@data$unstranded)
-
-# what are these?
-# Hint: Do the rows/cols match dimensions of other dataframes?
+rownames(assays(rna_se)$unstranded)
+colnames(assays(rna_se)$unstranded)
 
 ```
 
@@ -108,23 +102,21 @@ colnames(rna_se@assays@data$unstranded)
 For PART 2 of this week's assignment, you will be performing differential expression analysis, which calls for covariates to be controlled for. One of these covariates will be the age of patients. Let's begin inspecting the *age_at_index* column in the colData dataframe by looking at the first 15 values in it.
 
 ```{r Exercise 2.1}
-# write code here
-rna_se@colData$age_at_index[1:15]
+summary(colData(rna_se)$age_at_index[1:15])
 
 ```
 
 Call the *summary()* function on the *age_at_index* column. Record the output below:
-    Min.: 
-    1st Qu.: 
-    Median: 
-    Mean: 
-    3rd Qu.: 
-    Max.: 
-    NA's: 
+    Min.: 26.00
+    1st Qu.: 48.00 
+    Median: 58.00
+    Mean: 58.28
+    3rd Qu.:67.00
+    Max.: 89.00
+    NA's: 1
     
 ```{r Exercise 2.2}
 summary(rna_se@colData$age_at_index)
-
 ```
 
 We see that there is one patient with an N/A value in the *age_at_index* column. We will subset this patient out later, but first we'll make our own copy of the clinical data frame that we can manipulate to our needs. Create a data frame called *rna_clinical* that contains data from colData.
@@ -170,47 +162,41 @@ summary(rna_clinical$age_at_index)
 Call *head()* on *rowRanges@elementMetadata*:
 
 ```{r Exercise 3.1}
-# write code here
-head()
-
+head(rowData(rna_se))
 ```
 
 Create a data frame called *rna_genes* that contains data from *elementMetadata*.
 
 ```{r Exercise 3.2}
-rna_genes <- rna_se@rowRanges@elementMetadata
-
+rna_genes = rowData(rna_se)
 ```
 
 Use the *as.data.frame()* function on *rna_genes* to change it from an S4 object to a data frame object.
 
 ```{r Exercise 3.3}
-rna_genes <- as.data.frame()
+rna_genes <- as.data.frame(rna_genes)
 
 ```
 
 ###### (4) Assays - RNA expression data
 
 What are the names of the 6 assays?
-1. 
-2.
-3.
-4. 
-5. 
-6. 
+1. unstranded
+2. stranded_first
+3. stranded_second
+4. tpm_unstrand
+5. fpkm_unstrand
+6. fpkm_uq_unstrand
 
 ```{r Exercise 4.1}
-# access the assays here
-rna_se@assays@data
-
+assayNames(rna_se)
 ```
 
 Create a new data frame called "rna_counts" that contains the data from *unstranded*.
 ```{r Exercise 4.2}
 
-rna_counts <- rna_se@assays@data$[FILL IN]
-rna_counts <- as.data.frame('FILL IN')
-
+rna_counts <- rna_se@assays@data$unstranded
+rna_counts <- as.data.frame(rna_counts)
 ```
 
 
@@ -221,14 +207,14 @@ Notice how in this case, we apply the mask to the columns of the *rna_counts* da
 This is because the two data frames align in a unique way: the rows of *rna_clinical* match up with the columns of *rna_counts*. These are where the sample/patients are situated in either data frames.
 
 ```{r Exercise 4.3}
-rna_counts <- rna_counts[,age_NA_mask]
-
+rna_counts = as.data.frame(assays(rna_se)$unstranded)
+rna_counts = rna_counts[,age_NA_mask]
 ```
 
 Inspect the data for the first 5 patients (columns 1-5) and the first 15 genes (rows 1-15).
 
 ```{r Exercise 4.3}
-rna_counts[]
+rna_counts[1:15, 1:5]
 
 ```
 
@@ -238,7 +224,8 @@ rna_counts[]
 Call *rownames()* and *colnames()* on *rna_clinical*.
 
 ```{r Exercise 5.1}
-
+rownames(rna_clinical)
+colnames(rna_clinical)
 ```
 
 Just like we did to "clinical", we are going to create a column in *rna_clinical* named *age_category* to split apart younger and older patients. Our cutoff will be "young" as <= 58 y/o, and "old" as > 58 y/o.
@@ -258,8 +245,7 @@ Remember: ifelse(expression, x, y), where x happens if the expression is true, a
 Just like we did to "clinical", we are going to create a column in *rna_clinical* for *age_category*. Our cutoff will be "young" as <= 58 y/o, and "old" as > 58 y/o.
 
 ```{r Exercise 5.4}
-rna_clinical$age_category <- ifelse()
-
+rna_clinical$age_category <- ifelse(rna_clinical$age_at_index <= 58, "young", "old")
 ```
 
 ----
@@ -267,17 +253,14 @@ rna_clinical$age_category <- ifelse()
 Let's move on to *rna_genes*. Call *rownames()* and *colnames()* on *rna_genes*.
 
 ```{r Exercise 5.5}
-
+rownames(rna_genes)
+colnames(rna_genes)
 ```
 
 Oh no! These row names don't look very informative. We know that the rows in *rna_genes* symbolize genes, so what should we set *rownames()* to? One of the following commands will give an error.
 
 ```{r Exercise 5.6}
-
 rownames(rna_genes) <- rna_genes$gene_id
-
-rownames(rna_genes) <- rna_genes$gene_name
-
 ```
 
 We will be using *gene_id*, since *gene_name* can contain repeats. *gene_id* entries should all be unique.
@@ -286,15 +269,16 @@ We will be using *gene_id*, since *gene_name* can contain repeats. *gene_id* ent
 Now that *rna_genes* has informative row/column names, let's move on to *rna_counts.* Call *rownames()* and *colnames()* on *rna_counts*.
 
 ```{r Exercise 5.7}
-
+rownames(rna_counts)
+colnames(rna_counts)
 ```
 
 Uh oh! Looks like neither the row nor column names are very informative. Given what we did to the other data frames, add column and row names to *rna_counts*. Name the columns based on the patient barcodes (ie the row names for *rna_clinical*), and name the rows based on the gene id's (ie the row names for *rna_genes*).
 
 ```{r Exercise 5.8}
 
-rownames(rna_counts) <- [FILL IN]
-colnames(rna_counts) <- [FILL IN]
+rownames(rna_counts) <- rownames(rna_genes)
+colnames(rna_counts) <- rownames(rna_clinical)
 
 ```
 
@@ -319,21 +303,21 @@ Loading data from TCGA can be time consuming. It's much faster to access csv fil
 Save *rna_clinical* to your *analysis_data* directory. Make sure your working directory is set properly.
 
 ```{r Exercise 6.1}
-write.csv(rna_clinical, "brca_rna_clinical_data.csv", row.names = TRUE)
+write.csv(rna_clinical, "/home1/tchen173/analysis_data/brca_rna_clinical_data.csv", row.names = TRUE)
 ```
 
 
 Save *rna_genes* to your *analysis_data* directory.
 
 ```{r Exercise 6.2}
-write.csv(rna_genes, "brca_rna_gene_data.csv", row.names = FALSE)
+write.csv(rna_genes, "/home1/tchen173/analysis_data/brca_rna_gene_data.csv", row.names = FALSE)
 ```
 
 
 Save *rna_counts* to your *analysis_data* directory (warning: this will likely take a while!)
 
 ```{r Exercise 6.3}
-write.csv(rna_counts, "brca_rna_count_data.csv", row.names = TRUE)
+write.csv(rna_counts, "/home1/tchen173/analysis_data/brca_rna_count_data.csv", row.names = TRUE)
 ```
 
 
@@ -346,7 +330,7 @@ Once again, use the knitr function to set your working directory to your analysi
 (run getwd() in the console -- the small window below the main script area -- to check that the working directory is analysis_data)
 (if getwd() prints the wrong directory, run setwd("PATH TO anaylysis_data"))
 ```{r setup}
- knitr::opts_knit$set(root.dir = normalizePath("/PATH/TO/analysis_data"))
+ knitr::opts_knit$set(root.dir = normalizePath("/home1/tchen173/analysis_data"))
 ```
 
 If DESeq2 is not already installed, install it now
@@ -360,11 +344,9 @@ Read in the rna_clinical, rna_genes, and rna_counts dataframes which you made in
 
 ```{r}
 
-rna_clinical = read.csv("brca_rna_clinical_data.csv", row.names = 1)
-rna_genes = read.csv("brca_rna_gene_data.csv")
-rna_counts = read.csv("brca_rna_count_data.csv", row.names = 1)
-
-
+rna_clinical = read.csv("/home1/tchen173/analysis_data/brca_rna_clinical_data.csv", row.names = 1)
+rna_genes = read.csv("/home1/tchen173/analysis_data/brca_rna_gene_data.csv")
+rna_counts = read.csv("/home1/tchen173/analysis_data/brca_rna_count_data.csv", row.names = 1)
 ```
 
 
@@ -373,8 +355,20 @@ In this assignment, you will run differential expression analysis comparing pati
 
 Manipulate those columns so that they are ready for differential expression analysis (hint: what kind of variables are they? what data type are they by default? do you need to handle unknown values?) Filter out genes with a total expression across all patients less than 1000.
 ```{r}
+table(rna_clinical$definition, useNA = "always")
+table(rna_clinical$paper_BRCA_Subtype_PAM50, useNA = "always")
 
+rna_clinical$definition = factor(rna_clinical$definition)
 
+rna_clinical$paper_BRCA_Subtype_PAM50 = factor(rna_clinical$paper_BRCA_Subtype_PAM50)
+rna_clinical$paper_BRCA_Subtype_PAM50 = addNA(rna_clinical$paper_BRCA_Subtype_PAM50)
+levels(rna_clinical$paper_BRCA_Subtype_PAM50)[is.na(levels(rna_clinical$paper_BRCA_Subtype_PAM50))] = "Unknown"
+
+rna_clinical$age_at_index = as.numeric(rna_clinical$age_at_index)
+
+keep_genes = rowSums(rna_counts >= 1000)
+rna_counts = rna_counts[keep_genes, ]
+rna_genes = rna_genes[keep_genes, ]
 ```
 
 
@@ -383,35 +377,50 @@ Perform the differential expression analysis, All you need to do is fill in the 
 
 IMPORTANT: save the *results* data frame in your *analysis_data* directory using the last two commands in the chunk below. We will be using this for future assignments.
 ```{r}
-dds <- DESeqDataSetFromMatrix(countData = #fill in,
-                              colData = #fill in,
-                              design= #fill in)
+
+library(DESeq2)
+
+colnames(rna_counts) = gsub("\\.","-",colnames(rna_counts))
+
+common_patients = intersect(colnames(rna_counts), rownames(rna_clinical))
+
+rna_clinical_sub = rna_clinical[common_patients, ]
+rna_counts_sub = rna_counts[, common_patients]
+
+count_matrix = as.matrix(rna_counts_sub)
+mode(count_matrix) = "integer"
+
+dds <- DESeqDataSetFromMatrix(countData = count_matrix,
+                              colData = rna_clinical_sub,
+                              design= ~ age_at_index + paper_BRCA_Subtype_PAM50 + definition)
 
 dds_obj <- DESeq(dds)
 
 resultsNames(dds_obj)
 
-results <- results(dds_obj, format = "DataFrame", contrast = c(#variable name, #numerator , #denominator))
+results <- results(dds_obj, format = "DataFrame", contrast = c("definition", "Primary solid Tumor" , "Solid Tissue Normal"))
 
 results <- data.frame(results)
 
 ### save in .csv and .rds
 
-write.csv(results, "brca_DESeq_results.csv", row.names = T)
+write.csv(results, "/home1/tchen173/analysis_data/brca_DESeq_results.csv", row.names = T)
 # read in later using: results = read.csv("brca_DESeq_results.csv", row.names = 1)
 
-saveRDS(results, "brca_DESeq_results.rds")
+saveRDS(results, "/home1/tchen173/analysis_data/brca_DESeq_results.rds")
 # read in later using: results = readRDS("brca_DESeq_results.rds")
 ```
 
 Prepare results dataframe for EnhancedVolcano plotting. Add column "gene_name". Fill in the column appropriately.
 ```{r}
-
+results$gene_name = rna_genes$gene_name[match(rownames(results), rna_genes$gene_id)]
 ```
 
 *4*
 Now we will use the EnhancedVolcano package to plot our results. The code is already completed and should run without adjustment if all code up to here is correct.
 ```{r}
+library(EnhancedVolcano)
+
 EnhancedVolcano(results,
                 lab = results$gene_name,
                 x = 'log2FoldChange',
