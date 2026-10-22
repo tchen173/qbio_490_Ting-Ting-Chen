@@ -3,6 +3,8 @@ title: "Introduction to MAF"
 author: Joshua Lin, Christopher Kim, Erika Li, Jeanne Revilla, Mahija Mogalipuvvu, adapted from Nicole Black, Wade Boohar
 date: 07/17/22
 updated: 10/12/2026
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ***Deliverables***
@@ -17,50 +19,195 @@ In this assignment, you will need to use your skills learned in class to demonst
 
 *Pre-Assignment*
 Load all necessary packages, read in the clinical data.csv file you have in your analysis_data folder, and instantiate the MAF_object.
-```{r}
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath("/home1/tchen173/analysis_data"))
+```
 
+```{r}
+library(TCGAbiolinks)
+library(maftools)
+
+clinical = read.csv("~/analysis_data/brca_clinical_data.csv")
+
+maf_query = GDCquery(
+  project = "TCGA-BRCA",
+  data.category = "Simple Nucleotide Variation",
+  access = "open",
+  data.type = "Masked Somatic Mutation",
+  workflow.type = "Aliquot Ensemble Somatic Variant Merging and Masking"
+)
+
+GDCdownload(maf_query, method = "api", files.per.chunk = 10)
+maf = GDCprepare(maf_query)
+
+maf_samples = unique(as.character(maf$Tumor_Sample_Barcode))
+maf_patients = data.frame(
+  Tumor_Sample_Barcode = maf_samples,
+  suffix = substr(maf_samples, 9, 12),
+  stringsAsFactors = FALSE
+)
+
+clinical$Tumor_Sample_Barcode = NULL
+
+clinical_matched = merge(
+  maf_patients,
+  clinical,
+  by.x = "suffix",
+  by.y = "patient_id",
+  all.x = TRUE
+)
+
+maf_object = read.maf(
+  maf = maf,
+  clinicalData = clinical_matched,
+)
 ```
 
 It's useful to save your MAF_object, so that you don't have to go through the trouble of querying and preparing it everytime. The saveRDS function allows us to save an R object, allowing us to access it directly from our files. 
 ```{r}
-saveRDS(fill in with name of your MAF_object, file = "/path/to/analysis_data/maf_object.rds")
+saveRDS(maf_object, file = "/home1/tchen173/analysis_data/maf_object.rds")
 # ex. saveRDS(MAF_object, file = "/home1/yourname/490_cluster/analysis_data/maf_object.rds")
 ```
 
 When you reopen a new R session and want to access your MAF_object, you can use the readRDS function to load the object back into a new variable.
 ```{r}
-MAF_object <- readRDS(file = "/path/to/analysis_data/maf_object.rds")
+maf_object <- readRDS(file = "/home1/tchen173/analysis_data/maf_object.rds")
 # ex. MAF_object <- readRDS(file = "/home1/yourname/490_cluster/analysis_data/maf_object.rds")
 ```
 
 *1*
 Choose a clinical variable (or any variable from clin_rad or clin_drug) to separate your populations into two different groups and rewrite the column or create a new column with that variable as a factor. ***Do not use age or vital_status as your clinical variable.*** Hint: if your variable is continuous, you will need to determine your own cutoffs for the different levels of the factor. If your variable is categorical and has more than two possible values, choose the two that are the most common.
 ```{r}
+clinical = read.csv("~/analysis_data/brca_clinical_data.csv")
 
+maf_samples = unique(as.character(maf$Tumor_Sample_Barcode))
+maf_patients = data.frame(
+  Tumor_Sample_Barcode = maf_samples,
+  patient_id = substr(maf_samples, 1, 12)
+)
+
+clinical$Tumor_Sample_Barcode = NULL
+clinical_matched = merge(
+  maf_patients, 
+  clinical,
+  by = "patient_id",
+  all.x = TRUE
+)
+
+maf_object = read.maf(
+  maf = maf, 
+  clinicalData = clinical_matched
+)
+
+maf_suffixes = substr(maf_object@clinical.data$Tumor_Sample_Barcode, 9, 12)
+maf_object@clinical.data$gender = clinical$gender[match(maf_suffixes, clinical$patient_id)]
+
+maf_object@clinical.data$group_factor = factor(
+  ifelse(maf_object@clinical.data$gender == "FEMALE", "Female",
+  ifelse(maf_object@clinical.data$gender == "MALE", "Male", NA))
+)
+
+table(maf_object@clinical.data$group_factor, useNA = "ifany")
 ```
 
 
 *2*
 Create a co-oncoplot with the top 10-20 (you choose) most mutated genes for the two groups. Pick one that has a large discrepancy in % mutated or type of mutations between the groups and research it. 
 Research it. What is the gene used for? Can you think of any reason for the discrepancy?
-```{r}
+```{r, fig.width=16, fig.height=10}
+maf_object@clinical.data$gender = toupper(trimws(maf_object@clinical.data$gender))
+maf_object@clinical.data$group_factor = factor(
+  ifelse(maf_object@clinical.data$gender == "FEMALE", "Female",
+  ifelse(maf_object@clinical.data$gender == "MALE", "Male", NA))
+)
 
+female_maf = subsetMaf(maf = maf_object, clinQuery = "group_factor == 'Female'")
+male_maf = subsetMaf(maf = maf_object, clinQuery = "group_factor == 'Male'")
+
+top15_genes = getGeneSummary(maf_object)$Hugo_Symbol[1:15]
+
+coOncoplot(
+  m1 = female_maf,
+  m2 = male_maf,
+  m1Name = "Female(n=980)",
+  m2Name = "Male(n=11)",
+  genes = top15_genes,
+  removeNonMutated = TRUE
+  )
 ```
 
+```{r}
+# TTN is a protein that is used to encode Titin. In humans, titin is the largest protein and is significant because it provides structural elasticity in muscles within the cardiovascular and skeletal systems. Possible reasons for such discrepancy is because of the huge difference in the sample size between men and women. 
+```
 
 *3*
 Create a contingency table with your variable and chosen gene. Run a Fisher’s Exact Test between presence of mutations for that gene and your clinical variable. Create and save a mosaic plot. 
 Interpret the output of the Fisher’s Exact Test in terms of the odds ratio and p-value.
 ```{r}
+ttn_mut_samples = unique(
+  subsetMaf(maf = maf_object, genes = "TTN")@gene.summary$Tumor_Sample_Barcode
+)
 
+ttn_maf = subsetMaf(maf = maf_object, genes = "TTN")
+ttn_mutated_barcodes = unique(ttn_maf@data$Tumor_Sample_Barcode)
+
+maf_object@clinical.data$TTN_mutated = ifelse(
+  maf_object@clinical.data$Tumor_Sample_Barcode %in% ttn_mutated_barcodes,
+  "Mutated",
+  "Wildtype"
+)
+
+cont_table = table(
+  maf_object@clinical.data$group_factor,
+  maf_object@clinical.data$TTN_mutated
+)
+print("Contingency Table:")
+print(cont_table)
+
+fisher_results = fisher.test(cont_table)
+print(fisher_results)
+
+jpeg("~/analysis_data/ttn_gender_mosaicplot.jpg", width = 800, height = 600, res = 100)
+mosaicplot(
+  cont_table,
+  main = "Mosaic Plot : TTN Mutation Status vs Gender",
+  xlab = "Gender",
+  ylab = "TTN Mutation Status",
+  color = c("skyblue","lightgray")
+)
+dev.off()
+
+mosaicplot(
+  cont_table,
+  main = "Mosaic Plot : TTN Mutation Status vs Gender",
+  xlab = "Gender",
+  ylab = "TTN Mutation Status",
+  color = c("skyblue","lightgray")
+)
 ```
 
+```{r}
+# Interpret the output of the Fisher’s Exact Test in terms of the odds ratio and p-value.
+
+# The Fisher's Exact Test demonstrates that the p-value is 0.701. Therefore, due to the lack of significance in the p-value, the null hypothesis can't be rejected and there is no correlation between the individual's gender and TTN mutation. As for the odds ratio, given that the odds ratio is 2.07, it does demonstrate that TTN will be more present in women than in men. However, the confidence interval says otherwise and therefore, the conclusion can't be made that TTN is seen more in women than in men.
+```
 
 *4*
 Subset your maf_object based on your chosen clinical variable and create a co-lollipop plot of your chosen gene divided between the two different clinical variable possibilities. Include descriptive names on your plot.
 Do you notice any difference in terms of mutations (e.g. sites, types, number) between the two populations?
 ```{r}
+lollipopPlot2(
+  m1 = female_maf,
+  m2 = male_maf,
+  gene = "TTN",
+  m1_name = "Female (n=980)",
+  m2_name = "Male (n=11)"
+)
+```
+```{r}
+# Do you notice any difference in terms of mutations (e.g. sites, types, number) between the two populations?
 
+# I notice a difference in terms of the number of mutations. Particularly, given that the female cohort is much larger than the male cohort, the mutation sites for female are more spread out throughout the plot. In addition, women experience more missense mutations than their male counterparts.  
 ```
 
 
@@ -68,5 +215,35 @@ Do you notice any difference in terms of mutations (e.g. sites, types, number) b
 Create your Overall_Survival_Status column and create a mafSurvival KM plot based on mutations in your chosen gene.
 Does there seem to be a difference? Hypothesize why or not based on the other analysis you did with the gene above.
 ```{r}
+maf_patients$suffix = substr(maf_patients$patient_id, 9, 12)
 
+clinical_matched = merge(
+  maf_patients,
+  clinical,
+  by.x = "suffix",
+  by.y = "patient_id",
+  all.x = TRUE
+)
+
+maf_object@clinical.data = data.table::setDT(as.data.frame(clinical_matched))
+
+last_contact = as.numeric(as.character(maf_object@clinical.data$last_contact_days_to))
+death_days = as.numeric(as.character(maf_object@clinical.data$death_days_to))
+
+last_contact[last_contact < 0] = NA
+death_days[death_days < 0] = NA
+
+maf_object@clinical.data$overall_survival_days = dplyr::coalesce(death_days, last_contact)
+maf_object@clinical.data$Overall_Survival_Status = ifelse(
+  toupper(trimws(maf_object@clinical.data$vital_status)) %in% c("DEAD", "1"), 1, 0
+)
+
+sum(!is.na(maf_object@clinical.data$overall_survival_days))
+
+mafSurvival(
+  maf = maf_object,
+  genes = "TTN",
+  time = "overall_survival_days",
+  Status = "Overall_Survival_Status"
+)
 ```
