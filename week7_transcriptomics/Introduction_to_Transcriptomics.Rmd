@@ -429,14 +429,17 @@ EnhancedVolcano(results,
                 pointSize = 1.0,
                 labSize = 5.0)
 ```
+```{r}
+ggsave("/home1/tchen173/analysis_data/volcano_plot.png", width = 8, height = 6, dpi = 300)
+```
 
 *5*
 # Explain what genes from each part of the Volcano Plot mean in terms of their significance and up/down regulation. 
-top-right genes: 
-bottom-right genes: 
-top-left genes: 
-bottom-left genes: 
-top-middle genes: 
-bottom-middle genes: 
+top-right genes: The top-right genes have high significance and has up regulation. 
+bottom-right genes: The bottom-right genes does not have much significance, but does indicate up regulation.
+top-left genes: The top-left genes does have high significance and has down regulation.
+bottom-left genes: The bottom-left genes are not significant and has down regulation. 
+top-middle genes: The top-middle genes have high significance, but it is not significantly regulated.  
+bottom-middle genes: The bottom-middle genes are not particularly significant not significantly regulated.  
 
 Save the picture of the volcano plot (using either ggsave() or right clicking and manually downloading the image) and push this .Rmd file and the volcano plot to your personal GitHub repository.
