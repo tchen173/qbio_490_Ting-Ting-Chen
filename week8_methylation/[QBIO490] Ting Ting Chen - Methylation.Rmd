@@ -1,0 +1,456 @@
+---
+title: "[QBIO490] Ting Ting Chen - Methylation HW"
+output: html_document
+date: "2026-11-01"
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath("/home1/tchen173/analysis_data"))
+```
+
+```{r}
+if (!require("sesameData", quietly = TRUE))
+BiocManager::install("sesameData")
+
+if (!require("sesame", quietly = TRUE))
+BiocManager::install("sesame")
+
+if (!require("limma", quietly = TRUE))
+BiocManager::install("limma")
+```
+
+```{r}
+library(TCGAbiolinks)
+library(sesame)
+library(sesameData)
+library(limma)
+library(ggplot2)
+```
+
+```{r}
+query <- GDCquery(project = "TCGA-BRCA",
+                  data.category = "DNA Methylation",
+                  data.type = "Methylation Beta Value",
+                  platform = "Illumina Human Methylation 450",
+                  data.format = "Dataframe")
+#GDCdownload(query)      #<-- you will need to run this!
+methylation450 <- GDCprepare(query)
+```
+
+Part 1
+
+```{r}
+methylation_clinical <- as.data.frame(methylation450@colData)
+betas <- as.data.frame(methylation450@assays@data@listData) 
+cpg_sites <- as.data.frame(methylation450@rowRanges@elementMetadata)
+```
+
+```{r}
+column_mask = ifelse(
+  colnames(methylation_clinical) %in%
+    c('treatments', 'primary_site', 'disease_type', 'sites_of_involvement'),
+  FALSE, TRUE
+)
+
+methylation_clinical = methylation_clinical[, column_mask]
+
+write.csv(methylation_clinical, 'brca_methylation_clinical.csv')
+
+site_mask = !grepl('-', cpg_sites$gene) & 
+  !grepl(';', cpg_sites$gene) &
+  !is.na(cpg_sites$gene) &
+  complete.cases(betas)
+
+betas = betas[site_mask,]
+cpg_sites = cpg_sites[site_mask,]
+
+write.csv(betas,'brca_methylation_betas.csv')
+write.csv(cpg_sites,'brca_cpg_sites.csv')
+```
+
+```{r}
+table(methylation_clinical$definition)
+```
+
+```{r}
+sample_mask = methylation_clinical$definition %in% 
+  c("Metastatic", "Primary solid Tumor")
+
+methylation_clinical = methylation_clinical[sample_mask, ]
+betas_clean = betas[, sample_mask, drop = FALSE]
+
+methylation_clinical$metastatic = 
+  methylation_clinical$definition == "Metastatic"
+```
+
+```{r}
+table(methylation_clinical$definition)
+dim(betas_clean)
+```
+
+```{r}
+mval = t(apply(betas_clean, 1, function(x) log2(x/(1-x))))
+```
+
+```{r}
+design = model.matrix(~ metastatic, data = methylation_clinical)
+
+fit = lmFit(mval, design)
+fit2 = eBayes(fit)
+```
+
+```{r}
+colnames(fit$coefficients)
+dim(fit$coefficients)
+```
+
+```{r}
+dat = data.frame(
+  foldchange = fit[["coefficients"]][,2],
+  logPvalue = -log10(
+    p.adjust(fit2[["p.value"]][,2], method = "BY")
+  ),
+  geneName = cpg_sites$gene
+)
+
+dat$threshold = as.factor(abs(dat$foldchange) < 1)
+```
+
+```{r}
+cols = c("TRUE" = "grey", "FALSE" = "lightblue")
+
+ggplot(data = dat, aes(x = foldchange, y = logPvalue)) + 
+  geom_point(aes(color = threshold), alpha = 0.2, size = 0.6) +
+  scale_color_manual(values = cols) +
+  geom_vline(xintercept = 1, color = "#990000", 
+             linetype = "dashed") + 
+  geom_vline(xintercept = -1, color = "#990000", 
+             linetype = "dashed") +
+  geom_hline(yintercept = 2, color = "#990000",
+             linetypes = "dashed") + 
+  xlab("M-value Difference (Metastatic vs. Primary)") + 
+  ylab("-log10 Adjusted p-value") +
+  theme_bw() + 
+  theme(legend.position = "none")
+```
+```{r}
+write.csv(dat, "methylation_results_metastatic.csv")
+```
+
+# Interpretation of the Volcano Plot
+The left side of the volcano plot indicates a huge presence of CpG sites that are hypomethylated in metastatic samples. Meanwhile, the right side of the volcano plot shows a presence of CpG sites that are hypermethylated. Comparing both sides of the plot, the left side has more CpG sites than the right side. 
+
+
+```{r}
+sum(dat$logPvalue > 2 & dat$foldchange < -1, na.rm = TRUE)
+sum(dat$logPvalue > 2 & dat$foldchange > 1, na.rm = TRUE)
+```
+
+Part 2
+
+```{r}
+rna_clinical = read.csv("brca_rna_clinical_data.csv", 
+                        row.names = 1) 
+rna_genes = read.csv("brca_rna_gene_data.csv")
+rna_counts = read.csv("brca_rna_count_data.csv", 
+                      row.names = 1)
+```
+
+```{r}
+dim(rna_clinical)
+dim(rna_genes)
+dim(rna_counts)
+
+colnames(rna_clinical)
+colnames(rna_genes)
+
+head(colnames(rna_counts))
+head(rownames(rna_clinical))
+```
+```{r}
+meth_clinical_all = as.data.frame(methylation450@colData)
+
+meth_clinical_all = meth_clinical_all[
+  meth_clinical_all$definition %in%
+    c("Metastatic", "Primary solid Tumor"),
+]
+
+rna_sample_ids = substr(
+  gsub("\\.", "-", colnames(rna_counts)), 1, 16
+)
+
+meth_sample_ids = substr(
+  meth_clinical_all$barcode, 1, 16
+)
+
+sample_match = match(rna_sample_ids, meth_sample_ids)
+
+sum(!is.na(sample_match))
+
+table(meth_clinical_all$definition[
+  sample_match[!is.na(sample_match)]
+])
+```
+
+```{r}
+sum(duplicated(rna_sample_ids[!is.na(sample_match)]))
+sum(duplicated(meth_sample_ids))
+
+sample_groups = data.frame(
+  sample_id = meth_sample_ids,
+  definition = meth_clinical_all$definition
+)
+
+sum(sapply(
+  split(sample_groups$definition, sample_groups$sample_id),
+  function(x) length(unique(x)) > 1
+))
+```
+
+```{r}
+matched_mask = !is.na(sample_match)
+keep_mask = matched_mask & !duplicated(rna_sample_ids)
+
+rna_counts_clean = rna_counts[, keep_mask, drop = FALSE]
+
+matched_indices = sample_match[keep_mask]
+
+rna_clinical_clean = meth_clinical_all[
+  matched_indices, , drop = FALSE
+]
+
+dim(rna_counts_clean)
+table(rna_clinical_clean$definition)
+```
+
+```{r}
+all(
+  substr(gsub("\\.", "-", colnames(rna_counts_clean)), 1, 16) ==
+    substr(rna_clinical_clean$barcode, 1, 16)
+)
+```
+
+```{r}
+all(!is.na(rna_counts_clean))
+all(as.matrix(rna_counts_clean) >= 0)
+all(as.matrix(rna_counts_clean) == round(as.matrix(rna_counts_clean)))
+
+table(rna_clinical_clean$definition)
+```
+
+```{r}
+library(DESeq2)
+```
+
+```{r}
+colnames(count_matrix) = gsub("\\.", "-", colnames(rna_counts_clean))
+
+rownames(rna_clinical_clean) = colnames(count_matrix)
+
+dds = DESeqDataSetFromMatrix(
+  countData = count_matrix,
+  colData = rna_clinical_clean,
+  design = ~metastatic
+)
+
+dds = dds[rowSums(counts(dds)) >= 20, ]
+
+dim(dds)
+```
+
+```{r}
+dds = DESeq(dds)
+
+results = results(
+  dds,
+  contrast = c("metastatic", "Metastatic", "Primary solid Tumor")
+)
+
+de_results = as.data.frame(results)
+
+de_results$gene_id = rownames(de_results)
+
+head(de_results)
+```
+
+```{r}
+downregulated_results = de_results[
+  !is.na(de_results$padj) & 
+    de_results$padj <0.05 &
+    de_results$log2FoldChange < -1,
+]
+
+nrow(downregulated_results)
+```
+
+```{r}
+de_results$gene_id <- rownames(de_results)
+de_results$gene_id_clean <- sub(
+  "\\..*$", "", de_results$gene_id
+)
+
+rna_genes$gene_id_clean <- sub(
+  "\\..*$", "", rna_genes$gene_id
+)
+
+
+de_results$gene_name <- rna_genes$gene_name[
+  match(de_results$gene_id_clean,
+        rna_genes$gene_id_clean)
+]
+
+
+head(de_results[, c("gene_id", "gene_name",
+                    "log2FoldChange", "padj")])
+```
+
+```{r}
+length(downregulated)
+head(downregulated, 10)
+
+length(hypermethylated)
+head(hypermethylated, 10)
+
+sum(!is.na(de_results$gene_name))
+```
+```{r}
+downregulated <- unique(de_results$gene_name[
+  !is.na(de_results$padj) &
+  de_results$padj < 0.05 &
+  de_results$log2FoldChange < -1
+])
+
+hypermethylated <- unique(dat$geneName[
+  !is.na(dat$foldchange) &
+  dat$foldchange > 1.5
+])
+
+interest_genes <- intersect(downregulated, hypermethylated)
+
+interest_genes
+length(interest_genes)
+```
+
+
+```{r}
+GENE <- "CD164L2"
+
+sum(rna_genes$gene_name == GENE)
+sum(cpg_sites$gene == GENE)
+
+de_results[
+  de_results$gene_name == GENE,
+  c("gene_name", "log2FoldChange", "padj")
+]
+```
+
+```{r}
+
+gene_ids <- rna_genes$gene_id[
+  rna_genes$gene_name == GENE
+]
+
+gene_row <- which(
+  sub("\\..*$", "", rownames(rna_counts_clean)) %in%
+    sub("\\..*$", "", gene_ids)
+)
+
+if (length(gene_row) != 1) {
+  stop("Gene annotation does not match exactly one RNA count row.")
+}
+
+normalized_counts <- counts(dds, normalized = TRUE)
+
+rna_values <- as.numeric(
+  normalized_counts[gene_row, ]
+)
+
+rna_plot_data <- data.frame(
+  Group = rna_clinical_clean$definition,
+  Counts = rna_values
+)
+
+gene_betas_mask <- cpg_sites$gene == GENE
+
+meth_metastatic <- methylation_clinical$definition == "Metastatic"
+meth_primary <- methylation_clinical$definition == "Primary solid Tumor"
+
+methylation_metastatic <- betas_clean[
+  gene_betas_mask, meth_metastatic, drop = FALSE
+]
+
+methylation_primary <- betas_clean[
+  gene_betas_mask, meth_primary, drop = FALSE
+]
+```
+
+```{r}
+ggplot(rna_plot_data,
+       aes(x = Group, y = Counts, fill = Group)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  geom_jitter(width = 0.15, alpha = 0.25, size = 0.6) +
+  scale_fill_manual(values = c(
+    "Primary solid Tumor" = "blue",
+    "Metastatic" = "red"
+  )) +
+  labs(
+    title = paste("RNA Expression of", GENE),
+    x = "Sample Group",
+    y = "Normalized RNA Counts"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+```{r}
+primary_mean <- rowMeans(
+  methylation_primary, na.rm = TRUE
+)
+
+metastatic_mean <- rowMeans(
+  methylation_metastatic, na.rm = TRUE
+)
+
+methylation_plot_data <- data.frame(
+  CpG = rep(seq_along(primary_mean), 2),
+  Average_Beta = c(primary_mean, metastatic_mean),
+  Group = rep(
+    c("Primary solid Tumor", "Metastatic"),
+    each = length(primary_mean)
+  )
+)
+
+ggplot(methylation_plot_data,
+       aes(x = factor(CpG),
+           y = Average_Beta,
+           fill = Group)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(values = c(
+    "Primary solid Tumor" = "blue",
+    "Metastatic" = "red"
+  )) +
+  labs(
+    title = paste("CpG Methylation of", GENE),
+    x = "CpG Site",
+    y = "Average Beta Value",
+    fill = "Sample Group"
+  ) +
+  theme_bw()
+```
+
+```{r}
+write.csv(
+  de_results,
+  "brca_DESeq_results_metastatic.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  data.frame(gene_name = interest_genes),
+  "methylation_expression_overlap.csv",
+  row.names = FALSE
+)
+```
+
+# Interpretation:
+In the plot for the RNA Expression of CD164L2, it displays that the metastatic group has wider distribution of RNA expression. Looking at the primary tumor group, the samples have low RNA expression, with an exception of a few samples that have higher RNA expression compared to the rest of the samples. For the CpG Methylation of CD164L2, there are 15 CpG sites and the CpG sites that are closer towards either end of the range have higher methylation. 
